@@ -2,10 +2,11 @@
 name = "Example Project"
 version = "0.0.0"
 description = "Example Project"
-authors = ["Dan Elsender <danelsender@gmail.com>]
+authors = ["Dan Elsender <danelsender@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = ">3.8,<3.12"
+fastapi = "^0.92.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
