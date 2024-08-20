@@ -1,0 +1,525 @@
+{% extends "base.html" %}{% block content%}
+
+<h1>smoothed particle hydrodynamics.</h1>
+
+<p>this has been adapted from chapter 2 of my phd thesis.</p>
+
+<p>smoothed particle sydrodynamics (SPH) was initially born out of the
+    drive to study astrophysical problems that do not have spherical
+    symmetry. indeed it is in this regime where many of the most interesting
+    problems reside. this was the motivation for the invention of SPH,
+    introduced ,independently, by both <a href="https://doi.org/10.1093/mnras/181.3.375" target="_blank" rel="noopener noreferrer">gingold &amp; mongahan 1977</a> and <a href="https://ui.adsabs.harvard.edu/abs/1977AJ.....82.1013L/abstract" target="_blank">lucy 1977</a>. the
+    standard way of solving the equations of fluid dynamics is on a grid,
+    computing derivatives via finite difference or finite volumes methods.
+    The grid method has been applied extensively in the context of
+    astrophysics. however, by their very nature, problems in astrophysical
+    fluid dynamics span a vast range in time, space, and density; this
+    requires a great deal of adaptability from numerical methods, something
+    standard grid methods lack. much effort has been put into solving this
+    issue with the development of adaptive mesh refinement (AMR), though the
+    implementation of this is far from trivial. in addition to technical
+    difficulties these methods are prone to numerical diffusion due to the
+    grid itself.</p>
+    <p>the SPH method replaces the grid with a set of particles, which are
+    used as a set interpolation points from which the properties of the
+    fluid can be calculated. it is an intuitive and elegant solution. As SPH
+    is fully Lagrangian the particles move with the density distribution of
+    the fluid as it evolves. this means that SPH has adaptive resolution
+    built into it; denser regions have better resolution and no
+    computational effort is being wasted on regions in which there are no
+    particles. the advantages of this being that no knowledge of which
+    regions will require high resolution is need beforehand and no
+    complicated mesh refinement needs to take place. SPH also benefits from
+    its ability to use free boundaries, which crop up in a wide variety of
+    astrophysical problems, with relative ease. all SPH equations can be
+    derived from physical principles with few basic assumptions it is
+    straightforward to add complicated physics to SPH schemes.</p>
+    <p>this is not to say that SPH is perfect. whilst physics is, in
+    principle, straightforward to add into SPH scheme it is often
+    challenging in practice due to numerical issues to do with
+    instabilities. there is an additional computational cost due to the
+    requirement to build neighbour lists. the SPH method which i use uses 
+    a binary tree to determine neighbours of particles and to
+    calculate the gravitational forces. the positioning of the particles
+    themselves also causes issues. initial conditions in SPH are very
+    important and usually require some trial and error to get right, as
+    setups that are not appropriate to the problem can lead to unexpected
+    results. for a much more thorough read, see the reviews of <a href="https://ui.adsabs.harvard.edu/abs/1992ARA%26A..30..543M/abstract" target="_blank">mongahan 1992</a>
+    and <a href="https://ui.adsabs.harvard.edu/abs/2012JCoPh.231..759P/abstract" target="_blank">price 2012</a> and for a techincal overview see the
+    code paper <a href="https://ui.adsabs.harvard.edu/abs/2018PASA...35...31P/abstract" target="_blank">price 2018</a>.</p>
+    <h1 id="sph-fundamentals">SPH Fundamentals </h1>
+    <h2 id="interpolation-theory">Interpolation Theory</h2>
+    <p>the basis of SPH is interpolation theory. as mentioned above the
+    points of interpolation are the particles, from which any value can be
+    expressed.</p>
+    <p>a scalar variable \(A(\mathbf{r})\) is
+    defined as $$A(\mathbf{r}) = \int
+    A(\mathbf{r}')\delta(\mathbf{r}-\mathbf{r}')\mathrm{d}\mathbf{r}'$$ where \(\delta\) is the dirac delta function. this
+    can be approximated by replacing \(\delta\) with a smoothing kernel \(W\) with a width \(h\) where, $$\label{eq:kern_to_dirac}
+        \lim_{h \rightarrow 0} W(\mathbf{r}-\mathbf{r}',h) =
+    \delta(\mathbf{r}-\mathbf{r}').$$ this gives $$\label{eq:interp_basis}
+        A(\mathbf{r}) = \int A(\mathbf{r}')W(\mathbf{r}-\mathbf{r}')\mathrm{d}\mathbf{r}' +
+    O(h^2)$$ where \(W\) has
+    the property</p>
+    <p>$$\label{eq:kern_norm}
+        \int_V W(\mathbf{r}-\mathbf{r}',h)\mathrm{d}V = 1.$$ with this Eq. <a
+    href="#eq:interp_basis" data-reference-type="ref"
+    data-reference="eq:interp_basis">[eq:interp_basis]</a> can be expressed
+    as a sum over the interpolation points</p>
+    <p>$$\begin{aligned}
+        \langle A(\mathbf{r}) \rangle &amp;= \int \frac{A(\mathbf{r}')}{\rho
+    \mathbf{r}'} W(\mathbf{r}-\mathbf{r}',h)\rho(\mathbf{r}')\mathrm{d}\mathbf{r}' +
+    O(h^2)\label{eq:sph_interp_int}\\
+        &amp;\approx \sum_j^{N_\text{neigh}} m_j
+    \frac{A_j}{\rho_j}W(\mathbf{r}-\mathbf{r}',h),\label{eq:sph_interp_sum}
+    \end{aligned}$$where the mass element \(\rho dV\) has been replaced with
+    the mass of the particle \(m\),
+    \(N_\text{neigh}\) is the
+    number of neighbours and \(j\) is
+    the neighbour particle index. This summation over discrete points is
+    central to SPH formalism, and can be used to interpolate a quantity
+    \(A(\mathbf{r})\) at a point in space \(\mathbf{r}\) that is defined in terms of
+    quantities of the particles, e.g. \(\rho\), \(m\). The calculation of gradient terms
+    follows simply by taking the derivative of Eq. <a
+    href="#eq:sph_interp_int" data-reference-type="ref"
+    data-reference="eq:sph_interp_int">[eq:sph_interp_int]</a> $$\begin{aligned}
+        \nabla A(\mathbf{r}) &amp;= \frac{\partial}{\partial \mathbf{r}} \int
+    \frac{A(\mathbf{r}')}{\rho(\mathbf{r}')}
+    W(\mathbf{r}-\mathbf{r}',h)\rho(\mathbf{r}')\mathrm{d}\mathbf{r}' + O(h^2),\\
+        &amp;\approx \sum_j m_j
+    \frac{A_j}{\rho_j}\nabla_i{W(\mathbf{r}_i-\mathbf{r}_j,h)}.
+    \end{aligned}$$</p>
+    <h2 id="smoothing-kernels">Smoothing kernels</h2>
+    <p>Any kernel used in SPH must satisfy Eqs. <a href="#eq:kern_to_dirac"
+    data-reference-type="ref"
+    data-reference="eq:kern_to_dirac">[eq:kern_to_dirac]</a> and <a
+    href="#eq:kern_norm" data-reference-type="ref"
+    data-reference="eq:kern_norm">[eq:kern_norm]</a>. The original kernel
+    <span class="citation"
+    data-cites="gingold_sph_1977MNRAS.181..375G"></span> was the Gaussian
+    and in 3D takes the form $$W(r,h) =
+    \frac{1}{\pi^{3/2}h^3}\exp{-q^2},$$ where \(r = \vert \mathbf{r} - \mathbf{r}' \vert\), and \(q= r/h\). This has
+    the advantage of being spatially everywhere differentiable, which is
+    good for stability. But it also spans the entire spatial domain, which
+    is causes a needless waste of computing time as contributions from
+    particles become rapidly insignificant.</p>
+    <p>It is far more advantageous to define a kernel with compact support,
+    i.e. a truncation radius. Since <span class="citation"
+    data-cites="monaghan_refined_1985"></span> one of the most common kernel
+    is the M4 cubic spline <span class="math display">$$W(r,h) =
+    \frac{\sigma}{h^\nu} \begin{cases}
+            1 - \frac{3}{2} q^2 + \frac{3}{4} q^3 &amp; \text{if}\ 0 \leq q
+    &lt; 1,\\
+            \frac{1}{4} (2 - q)^3 &amp; \text{if}\ 1 \leq q &lt; 2,\\
+            0 &amp; \text{else},
+        \end{cases}$$</span> where ν is the number of dimensions, and
+    σ</em> = [2/3, 10/7<em>π</em>, 1/<em>π</em>]</span>
+    are the normalisation factors in each dimension. This kernel has compact
+    support over <span class="math inline">2<em>h. Whilst this
+    has the advantage of reduced computation requirements it comes at the
+    cost of reduced accuracy. Usually the cubic kernel is sufficient for
+    most problems in SPH, sometimes a kernel with a larger compact support
+    is needed, for example when including dust in calculations. Such a
+    kernel is the M6 quintic kernel <span class="math display">$$W(r,h) =
+    \frac{1}{120 \pi h^3} \begin{cases}
+        (3-q)^5 - 6(2-q)^5 + 15(1-q)^5, &amp; \text{if } 0 \leq q &lt; 1,\\
+        (3-q)^5 - 6(2-q)^5 , &amp; \text{if } 1 \leq q &lt; 2, \\
+        (3-q)^5, &amp; \text{if } 2 \leq q &lt; 3, \\
+        0 &amp; \text{otherwise},
+        \end{cases}$$</span> this has compact support up to <span
+    class="math inline">3<em>h and gives virtually identical
+    results as the Gaussian in most problems.</p>
+    <h2 id="smoothing-length">Smoothing length</h2>
+    <p>The term smoothing length refers to the scale over which forces and
+    physical properties of particles are smoothed out over. This is where
+    SPH gets its name, physical properties are smoothed out using a kernel
+    function. A key principle is to keep the number of neighbours that a
+    particle has roughly constant; for the usual cubic spline, for example,
+    this is <span class="math inline"> ≈ 60</span>. This is so that any
+    region of the fluid can be well represented. As a consequence of the
+    Lagrangian nature of SPH keeping the number of neighbours of any given
+    particle roughly constant mean that each particle must have its own
+    smoothing length that is able to vary. The smoothing length of a
+    particle <span class="math inline"><em>i in 3D can be
+    defined as <span class="math display">$$h_i = \eta \left(
+    \frac{m_i}{\rho_i} \right)^{(1/3)},$$</span> where η is used to set the number of
+    particles for every particle. To obtain about <span
+    class="math inline">60</span> neighbours using a cubic spline η</em> = 1.2</span>. The choice of value of
+    <span class="math inline"><em>η is important as it can lead
+    to the pairing instability, where the distribution of particles becomes
+    unstable and particles can fall on top of each other.</p>
+    <h1 id="fluid-equations">Fluid Equations</h1>
+    <p>Now that the theory of SPH has been laid out the equations of
+    hydrodynamics can be solved. It is pertinent to re-state that SPH is in
+    the Lagrangian frame of reference, as such derivative take the form
+    <span class="math display">$$\dv{A}{t} = \pdv{A}{t} +
+    \mathbf{v}\cdot\grad{A},$$</span> where \(\mathbf{v}\) is the velocity of the fluid. This
+    gives the flow rate of a property, A, for a fluid as a function of
+    space and time, opposed to the Eulerian which gives the rate of flow in
+    fixed space.</p>
+    <h2 id="continuity-equation">Continuity equation</h2>
+    <p>Using Eq. <a href="#eq:sph_interp_sum" data-reference-type="ref"
+    data-reference="eq:sph_interp_sum">[eq:sph_interp_sum]</a> the density
+    of particle <span class="math inline"><em>i is <span
+    class="math display"><em>ρ</em><sub><em>i</em></sub> = ∑<sub><em>j</em></sub><em>m</em><sub><em>j</em></sub><em>W</em><sub><em>i</em><em>j</em></sub>(<em>h</em><sub><em>i</em></sub>).</span>
+    Taking the derivative of this yields <span
+    class="math display">$$\label{eq:sph_cont}
+        \dv{\rho_i}{t} = \sum_j m_j (\mathbf{v}_i - \mathbf{v}_j) \cdot \grad_i
+    W_{ij}(h_i).$$</span> The continuity equation is the differential form
+    of the conservation of mass of a system defined as <span
+    class="math display">$$\label{eq:cont_eq}
+        \pdv{\rho}{t} + \rho \div{\mathbf{v}} = 0,$$</span> meaning that the
+    rate of change of mass within a fixed volume equals the rate of flow
+    through the boundaries of that volume.</p>
+    <p>To derive the SPH form of the continuity equation the golden rule of
+    SPH must first be applied, that is to rearrange the continuum equation
+    such that the operators are acting on the density. Applying this golden
+    rule to Eq. <a href="#eq:cont_eq" data-reference-type="ref"
+    data-reference="eq:cont_eq">[eq:cont_eq]</a> gives <span
+    class="math display">$$\pdv{\rho}{t} + [ \div{\rho \mathbf{v}} - \mathbf{v}
+    \cdot \grad{\rho} ] = 0.$$</span> Then applying the summation
+    interpolants and rearranging gives <span
+    class="math display">$$\begin{aligned}
+        \pdv{\rho_i}{t} &amp;= \mathbf{v}_i \sum_j m_j \cdot \grad{W_{ij}(h_i)}
+    - \sum_j m_j \mathbf{v}_j \cdot \grad{W_{ij}(h_i)},\\
+        &amp;= \sum_j m_j (\mathbf{v}_i - \mathbf{v}_j) \cdot \grad_i W_{ij}(h_i),
+    \end{aligned}$$</span> which is identical to Eq. <a href="#eq:sph_cont"
+    data-reference-type="ref"
+    data-reference="eq:sph_cont">[eq:sph_cont]</a>. Therefore the continuity
+    equation can be replaced by either Eq. <a href="#eq:sph_dens"
+    data-reference-type="ref" data-reference="eq:sph_dens">[eq:sph_dens]</a>
+    or Eq. <a href="#eq:sph_cont" data-reference-type="ref"
+    data-reference="eq:sph_cont">[eq:sph_cont]</a>.</p>
+    <p>The remainder of the SPH algorithm can be derived from just Eq. <a
+    href="#eq:sph_dens" data-reference-type="ref"
+    data-reference="eq:sph_dens">[eq:sph_dens]</a> and the first law of
+    thermodynamics, using a variational principle. This is a wonderful fact
+    as this means that SPH obeys conservation laws exactly.</p>
+    <h2 id="sec:eom">The Lagrangian</h2>
+    <p>The Lagrangian of hydrodynamics is <span class="citation"
+    data-cites="eckart_1960"></span> <span class="math display">$$L = \int
+    \left( \frac{1}{2} \rho v^2 - \rho u  \right)\mathrm{d}V,$$</span> where
+    <span class="math inline"><em>u is the internal energy per
+    unit mass. Applying the summation interpolants to convert this into a
+    SPH equation gives <span class="math display">$$L = \sum_j m_j
+    \left(\frac{1}{2} v_j^2 - u_j(\rho_j,s_j)  \right)$$</span> where s is entropy. The equations of
+    motion are given by the Euler-Lagrangian equations for a particle i <span
+    class="math display">$$\label{eq:Euler-Lagrange}
+        \dv{}{t}\left\{ \pdv{L}{\mathbf{v}_i} \right\} - \pdv{L}{\mathbf{r}_i} =
+    0.$$</span> From this we have <span
+    class="math display">$$\pdv{L}{\mathbf{v}_i} = m_i\mathbf{v}_i; \qquad
+    \pdv{L}{\mathbf{r}_i} = - \sum_j m_j \left. \pdv{u_j}{\rho_j}
+    \right\vert_{s_j} \pdv{\rho_j}{\mathbf{r}_j}$$</span> assuming a constant
+    entropy <span class="math inline"><em>s (no dissipation).
+    From the first law of thermodynamics <span
+    class="math display">d<em>U</em> = <em>T</em>d<em>S</em> − <em>P</em>d<em>V</em>.</span>
+    The volume in SPH is not computed directly but estimated by V</em> = <em>m</em>/<em>ρ thus <span
+    class="math display">$$\begin{aligned}
+        \mathrm{d}V &amp;= - \frac{m}{\rho^2} \mathrm{d}\rho,\\
+        \implies \mathrm{d}u &amp;= T\mathrm{d}s +
+    \frac{P}{\rho^2}\mathrm{d}\rho.
+    \end{aligned}$$</span> At a constant entropy this gives the result <span
+    class="math display">$$\label{eq:int_e_lag}
+        \left. \pdv{u_j}{\rho_j}\right\vert_{s_j} =
+    \frac{P}{\rho^2}.$$</span> Taking the spatial derivative of the density
+    estimate yields <span class="math display">$$\pdv{\rho_j}{\mathbf{r}_i} =
+    \frac{1}{\Omega_j}\sum_k m_k \grad_i{W_{bc}(h_j)\left( \delta_{ji} -
+    \delta_{ki} \right)}.$$</span> The variability of h across particles needs to be
+    accounted for, as a results we end up with a gradient term for each
+    particle, <span class="math display">$$\label{eq:grad_kern}
+        \Omega_i = 1 - \pdv{h_i}{\rho_i} \sum_j m_j
+    \pdv{W_{ij}(h_i)}{h_i},$$</span> where \(W_{ij}(h) = W(\mathbf{r}_i - \mathbf{r}_j,h)\).
+    Rearranging and substitution into Eq. <a href="#eq:Euler-Lagrange"
+    data-reference-type="ref"
+    data-reference="eq:Euler-Lagrange">[eq:Euler-Lagrange]</a> gives the
+    equation of momentum <span
+    class="math display">$$\dv{}{t}\left\{m_i\mathbf{v}_i \right\} = - \sum_j
+    m_j \frac{P_j}{\Omega_j \rho_j^2} \sum_k m_k \grad_i{W_{jk}(h_b)\left(
+    \delta_{ji} - \delta_{ki} \right)},$$</span> upon simplification <span
+    class="math display">$$\dv{\mathbf{v}_i}{t} = - \sum_j m_j \left(
+    \frac{P_i}{\Omega_i \rho_i^2} + \frac{P_j}{\Omega_j \rho_j^2}\right)
+    \grad_i{W_{ij}(h_i)}.$$</span> This is the equation of motion in the
+    absence of dissipation and self-gravity. The inclusion of these gives
+    <span class="math display">$$\dv{\mathbf{v}_i}{t} = - \sum_j m_j \left(
+    \frac{P_i}{\rho_i^2 \Omega_i} \grad_i{W_{ij}(h_i)} + \frac{P_j}{\rho_j^2
+    \Omega_j} \grad_j{W_ij}(h_j) \right) + \Pi_{\mathrm{AV}} +
+    \grad{\Phi},$$</span> <span class="math inline"><em>Π is the
+    artificial viscosity defined in Eq. <a href="#eq:av"
+    data-reference-type="ref" data-reference="eq:av">[eq:av]</a>, and \(\grad{\Phi}\) is the acceleration due to
+    self-gravity defined in Eq. <a href="#eq:grav_soften_sph"
+    data-reference-type="ref"
+    data-reference="eq:grav_soften_sph">[eq:grav_soften_sph]</a>.</p>
+    <h2 id="energy-equation">Energy equation</h2>
+    <p>The SPH equation for the evolution of internal energy can be simply
+    derived by rearranging Eq. <a href="#eq:int_e_lag"
+    data-reference-type="ref"
+    data-reference="eq:int_e_lag">[eq:int_e_lag]</a> <span
+    class="math display">$$\dv{u_i}{t} = \frac{P_i}{\rho_i^2}
+    \dv{\rho_i}{t},$$</span> and then taking the time derivative of the
+    density summation to give <span class="math display">$$\dv{u_i}{t} =
+    \frac{P_i}{\rho_i^2} \sum_j m_j (\mathbf{v}_i - \mathbf{v}_j) \cdot
+    \grad_i{W_{ij}(h_i)}.$$</span> Taking into account the kernel gradients
+    and dissipation gives and internal energy equation <span
+    class="math display">$$\dv{u_i}{t} = \frac{P_i}{\Omega_i\rho_i^2} \sum_j
+    m_j (\mathbf{v}_i - \mathbf{v}_j) \cdot \grad_i{W_{ij}(h_i)} +
+    \left(\dv{u_i}{t}\right)^\text{diss},$$</span> i define the contribution
+    to internal energy due to dissipation in Section <a href="#sec:av"
+    data-reference-type="ref" data-reference="sec:av">2.5</a>.</p>
+    <h2 id="neighbours-and-gravity">Neighbours and gravity</h2>
+    <p>The reality of finding a particle’s neighbour is very computationally
+    expensive and scales as O</em>(<em>N</em><sup>2</sup>)</span> without
+    any optimisation. The code used in this work, <span
+    class="smallcaps">sphNG</span>, uses a binary tree structure originally
+    described in <span class="citation"
+    data-cites="press_binary_1986"></span> to compute gravity and to find
+    neighbours, this improves efficiency of neighbour finding to O</em>(<em>N</em>log <em>N</em>)</span>. All
+    particles (leaves of the tree) that share a nearest mutual neighbour are
+    paired, the properties of which are combined into a node. All other
+    particles go through the same process until the final two nodes are
+    paired with the root node. To find the neighbours for particle i the tree is walked, ignoring nodes
+    with a sphere of influence that does not fall within the truncation
+    radius of particle <span class="math inline"><em>i.</p>
+    <p>The same tree is used to calculate the gravitational force on any
+    given particle. For particles at a distance greater than <span
+    class="math inline">2<em>h gravitational forces can be
+    computed using the combined contribution of particles, i.e. the nodes
+    themselves. The gravitational forces over these long ranges are
+    calculated using the gravitational monopole and quadrupole terms of
+    distant nodes. All nodes that are within the kernel radius are opened to
+    particle level and the gravitational forces are computed directly. The
+    nodes outside the kernel radius with size to distance ratio h</em>/<em>r</em> &gt; 0.3</span> are opened
+    until their constituent nodes satisfy the criterion h</em> &lt; 0.3<em>r. It is an
+    important distinction that SPH particles are not point masses. They are
+    interpolation points that represent a continuous distribution of fluid.
+    Fluid mass contained in overlapping regions represented by these points
+    needs to be accounted for, otherwise the gravitational forces calculated
+    will be too high as this shared mass will counted multiple times. In
+    these cases it is necessary to use a gravitational softening scheme. The
+    gravitational potential is given by <span class="citation"
+    data-cites="price_2007MNRAS.374.1347P"></span> <span
+    class="math display">$$\Phi_i(r) = - G \sum_j m_j \phi
+    (\mathbf{r}_i-\mathbf{r}_j,h_i),$$</span> where ϕ is the softening kernel derived
+    from the density kernel via Poisson’s equation. For the cubic spline
+    this is <span
+    class="math display"><em>ϕ</em> = ∫<em>ϕ</em>′d<em>r</em>,</span> where
+    <span class="math display">$$\phi' = \frac{4\pi}{r^2} \int_0^r
+    W(r',h)r'^2\mathrm{d}r'.$$</span> is the force kernel. As a result this
+    adds an additional term onto the equations of motion (see Section <a
+    href="#sec:eom" data-reference-type="ref"
+    data-reference="sec:eom">2.2</a>) <span
+    class="math display">$$\label{eq:grav_soften_sph}
+        \grad{\Phi_i} = - G \sum_j m_j \left[ \frac{\phi_{ij}(h_i) +
+    \phi_{ij}(h_j)}{2} \right]\mathbf{\hat{r}}_ij - \frac{G}{2} \sum_j m_j
+    \left[ \frac{\zeta_i}{\Omega_i} \grad_i{W_{ij}(h_i)} +
+    \frac{\zeta_j}{\Omega_j} \grad_i{W_{ij}(h_j)} \right],$$</span> where
+    <span class="math inline"><em>ζ is the gradient of variable
+    softening length <span class="math display">$$\zeta_i =
+    \pdv{h_i}{\rho_i} \sum_j m_j \pdv{\phi_{ij}(h_i)}{h_i}.$$</span> The
+    first term in Eq. <a href="#eq:grav_soften_sph"
+    data-reference-type="ref"
+    data-reference="eq:grav_soften_sph">[eq:grav_soften_sph]</a> is the
+    softened force due to gravity and the second term is required to
+    conserve energy in the presence of smoothing length gradients.</p>
+    <h2 id="sec:av">Artificial viscosity</h2>
+    <p>The presence of shocks in numerical hydrodynamics leads to
+    discontinuities in the fluid as the numerical method can not resolve
+    down to the scale of the mean free path of the gas. In a real fluid
+    kinetic energy is dissipated into heat due to an inherent viscosity. As
+    this viscosity can not be resolved by the numerical method but must be
+    accounted for, an artificial viscosity is included. Viscous terms are
+    added to the fluid equations as was suggested by <span class="citation"
+    data-cites="von_neumann_method_1950"></span>. In <span
+    class="smallcaps">sphNG</span> the formulation described by <span
+    class="citation" data-cites="monaghan_sph_1997"></span> is employed as
+    <span class="math display">$$\label{eq:av}
+        \Pi_{ij} = - \sum_j \frac{m_j}{\rho_{ij}^2} \left[
+    \frac{q_{ij}^i}{\Omega_i} \grad_i{W_{ij}(h_i)} +
+    \frac{q_{ij}^j}{\Omega_j} \grad_j{W_{ij}(h_j)} \right],$$</span> where
+    ρ</em><sub><em>i</em><em>j</em></sub></span> is
+    the mean density of particles i and j and q</em><sub><em>i</em><em>j</em></sub><sup><em>i</em></sup></span>
+    is defined as <span class="math display">$$q^i_{ij} =
+        \begin{cases}
+            - \frac{1}{2} \rho_i v_{\text{sig},i} \mathbf{v}_{ij} \cdot
+    \mathbf{\hat{r}}_{ij}, &amp; \mathbf{v}_{ij} \cdot \mathbf{\hat{r}}_{ij} &lt; 0\\
+            0, &amp; \text{else,}
+        \end{cases}$$</span> where signal velocity v</em><sub>sig, <em>i</em></sub></span> is <span
+    class="math display">$$v_{\text{sig},i} = \alpha_i^{\text{AV}}
+    c_{\text{s},i} + \beta_{\text{AV}} \left\vert \mathbf{v}_{ij} \cdot
+    \mathbf{\hat{r}}_{ij} \right\vert,$$</span> and α</em><sub><em>i</em></sub><sup>AV</sup></span>
+    is varied according to the <span class="citation"
+    data-cites="1997JCoPh.136...41M"></span> viscosity switch between <span
+    class="math inline">[0.1, 1]</span> and β</em><sub>AV</sub> = 2</span>.</p>
+    <p>The <span class="math inline"><em>β</em><sub>AV</sub></span> term
+    provides provides a second-order Von Neumann &amp; Richtmyer like term
+    that prevents particle interpenetration by dissipating the kinetic
+    energy of particle moving towards each other as heat. The β term is very important in the
+    context of accretion discs where a low α is applied in the absence of
+    shocks. The contribution to the internal energy is given by <span
+    class="citation" data-cites="phantom_2018PASA...35...31P"></span> as
+    <span class="math display">$$\left( \dv{u_i}{t} \right)^{\text{diss}} =
+    - \frac{1}{\Omega_i \rho_i} \sum_j m_j v_{\text{sig},i} \frac{1}{2}
+    \left( \mathbf{v}_{ij} \cdot \hat{\mathbf{r}}_{ij} \right) ^2
+    F_{ij}(h_i),$$</span> where \(\hat{\mathbf{r}}_{ij}F_{ij} =
+    \nabla_IW_{ij}\).</p>
+    <h1 id="time-stepping">Time stepping</h1>
+    <h2 id="time-integration">Time integration</h2>
+    <p>The <span class="smallcaps">sphNG</span> code uses a second-order
+    Runge-Kutta-Fehlberg integrator <span class="citation"
+    data-cites="fehlberg1969low"></span> to evolve the difference equations
+    to be solved. In this scheme the first step is to evaluate the rate of
+    change quantity \(\mathbf{A}\) <span
+    class="math display">$$k_0 = \dot{\mathbf{A}}(t_n, \mathbf{A}_n),$$</span> where
+    <span class="math inline"><em>n denotes the timestep
+    counter. The quantity \(\mathbf{A}_n\) is
+    predicted at a half timestep \(\mathbf{A}_{n+1/2}\) and the derivatives are
+    re-evaluated as <span class="math display">$$k_1 = \dot{\mathbf{A}} \left(
+    t_n + \frac{\Delta t}{2}, \mathbf{A}_{n+1/2}  \right),$$</span> k</em><sub>1</sub></span> is the predicted
+    gradient of \(\mathbf{A}\) at a half
+    timestep. An improved estimate of the derivatives are calculated using a
+    weighted average of k</em><sub>0</sub></span> and k</em><sub>1</sub></span>, this additional
+    accuracy is why the Fehlberg intergrator is second-order even though
+    strictly speaking it is a first-order integrator. The result is <span
+    class="math display">$$\mathbf{A}_{n+1} = \mathbf{A}_n + \left( \frac{1}{256}
+    k_0 + \frac{255}{256} k_1 \right) \Delta t.$$</span></p>
+    <h2 id="setting-timesteps">Setting timesteps</h2>
+    <p>An essential constraint in any numerical differential equation solver
+    is to satisfy the Courant-Friedrichs-Lewy (CFL) condition, which
+    determines the hydrodynamic timestep. The CFL timestep is defined as
+    <span class="math display">$$\Delta t_{\text{CFL}} = C_{\text{CFL}}
+    \left( \frac{h}{v_{\text{sig}}} \right)$$</span> where v</em><sub>sig</sub></span> is the signal
+    velocity and <span class="math inline"><em>C</em><sub>CFL</sub></span>
+    is the Courant number, set to 0.3 in <span
+    class="smallcaps">sphNG</span>.</p>
+    <p>In addition to the CFL constraint there is also a force constraint
+    which is calculated from the ratio of smoothing length to acceleration
+    magnitude \(\mathbf{\left\vert \mathbf{a}
+    \right\vert}\) <span class="math display">$$\Delta t_\text{F} =
+    C_\text{F} \sqrt{\frac{h}{\left\vert \mathbf{a}\right\vert}}$$</span> where
+    <span class="math inline"><em>C</em><sub>F</sub></span> is set to 0.3.
+    Under this condition particles with a high acceleration are given
+    shorter timesteps to maintain accuracy.</p>
+    <p>In a purely hydrodyanamical calculation these two conditions suffice.
+    When adding in additional physics there may be a requirement to include
+    additional constraints on the timesteps. The timestep for a particle
+    <span class="math inline"><em>i is set by taking the minimum
+    value of all timestep constraints that are necessary, for example in the
+    purely hydrodynamical case <span
+    class="math display"><em>Δ</em><em>t</em><sub>min</sub> = min (<em>Δ</em><em>t</em><sub>CFL</sub>, <em>Δ</em><em>t</em><sub>F</sub>).</span></p>
+    <h2 id="individual-timesteps">Individual timesteps</h2>
+    <p>To save on computational expense all particles are each given their
+    own timesteps <span class="citation" data-cites="bate_thesis"></span> .
+    For particles in low density regions it is sufficient to take long
+    timesteps to achieve the required numerical accuracy, whereas for
+    particles in high density regions short timesteps are needed. In
+    practice individual particle timesteps are set into timestep bins. In
+    advance of a calculation a maximum timestep, Δ</em><em>t</em><sub>max</sub></span>, is chosen
+    and divided by powers of two, upto <span
+    class="math inline">2<sup>30</sup></span> meaning that the smallest
+    timestep bin is <span class="math inline"> ≈ 10<sup>9</sup></span> times
+    smaller than Δ</em><em>t</em><sub>max</sub></span>. In
+    addition to this particles that share a timestep are evolved together
+    along with particles with other timesteps if they are smaller or if they
+    are a multiple of their timestep.</p>
+    <h2 id="sink-particles">Sink particles</h2>
+    <p>As density increases, timesteps decrease. At the point when a
+    protostar forms calculations effectively stop due to the very small
+    timesteps required at the location of the protostar. As the interiors of
+    these objects are not of interest in calculations studying discs, all
+    the particles that make up the protostar are replaced by a single,
+    non-gaseous, massive particle with the combined mass, linear momentum
+    and spin of the particles it replaces. Infalling material can be
+    accreted by the particle, alleviating the need for small timesteps. This
+    massive particle is referred to as a sink particle <span
+    class="citation"
+    data-cites="bate_sink_particles_1995MNRAS.277..362B"></span>. The idea
+    has been use previously in finite-difference grid codes to study
+    collapsing clouds past the point of protostellar core formation <span
+    class="citation"
+    data-cites="boss_collapse_1982 boss_protostellar_1987"></span>, however
+    these central cells were fixed, the sink particles in SPH can move
+    around.</p>
+    <p>The sink particles interact with other particles only via gravity.
+    Particles that come within a certain radius of the sink particle, r</em><sub>acc</sub></span> may be accreted if
+    some criteria are satisfied. The accretion radius is set before a
+    calculation is begun and remains at that value throughout the
+    calculation. Typically an accretion radius is set depending on the
+    resolution desired about a sink particle. The first criterion of
+    accretion is that a particle must be bound to the sink. Second, the
+    specific angular momentum of the particle must be less than required for
+    it to form a circular orbit at the accretion radius about the sink.
+    Finally, the particle must be more tightly bound to that sink than to
+    other sink particles.</p>
+    <h2 id="planets-with-surfaces">Planets with surfaces</h2>
+    <p>In this thesis i make use of the planetary model of <span
+    class="citation" data-cites="ayliffe_gas_2009"></span>. In this setup,
+    planetary cores are modelled with a gravitational potential. The method
+    of <span class="citation" data-cites="ayliffe_gas_2009"></span> has been
+    adapted to allow for the use of a gravitational potential to be used in
+    a global disc simulation rather than in a disc section. The main benefit
+    of this model that accretion can be modelled down onto the planet core,
+    allowing the formation of a planetary atmosphere. In order to build this
+    gas atmosphere, gravity is modified near the planet surface. The
+    gravitational potential approaching the surface from outside gradually
+    shallows, and then rapidly increases inside this surface to prevent
+    particle penetration. The gravitational force take the form <span
+    class="math display">$$F_r = - \frac{GM_\text{c}}{r^2} \left( 1 - \left(
+    \frac{2R_\text{p} - r}{R_\text{p}}\right)^4 \right),$$</span> for r</em> &lt; 2<em>R</em><sub>p</sub></span> where
+    <span class="math inline"><em>r is the radius from the
+    centre of the planetary core, R</em><sub>p</sub></span> is the radius of the
+    planet core, and <span class="math inline"><em>M</em><sub>c</sub></span>
+    is the core mass. This results in a net zero force between a particle
+    and the planet core at a radius of R</em><sub>p</sub></span>. Inside the core
+    radius the force is outwards and increases with decreasing radius. As a
+    result, particles come to rest close to the core radius. As more
+    particles become bound to the planet core they layer upon top of the
+    inner layer of particles, this gradually forms the planetary atmosphere.
+    Using this method allows for natural growth of a planet, self-gravity,
+    and radiative transfer.</p>
+    <h2 id="radiative-transfer">Radiative transfer</h2>
+    <p>With the inclusion of radiative transfer the equations of
+    hydrodynamics must be reformulated. This work uses the flux-limited
+    diffusion of <span class="citation"
+    data-cites="whitehouse_2005MNRAS.364.1367W"></span>, their method
+    implements the radiation hydrodynamics equations of <span
+    class="citation" data-cites="mihalas_foundations_1984"></span>. In
+    solving the radiation hydrodynamic equations it is useful to redefine
+    the specific gas energy into the gas energy density, e</em> = <em>u</em><em>ρ. In the
+    formulation the continuity equation remains the same as in
+    hydrodynamics. The momentum equation now must include radiation pressure
+    <span class="math display">$$\rho \frac{D\mathbf{v}}{Dt} = - \nabla P +
+    \frac{\chi_\text{F} \rho}{c} \mathbf{F},$$</span> where χ</em><sub>F</sub></span> is the flux mean total
+    opacity, and \(\mathbf{F}\) is the momentum
+    density flux. The time dependence of the radiation energy density is
+    <span class="math display">$$\rho \frac{D}{Dt} \left(\frac{E}{\rho}
+    \right) = - div{\mathbf{F}} - \nabla \mathbf{v}:\mathbf{P} + 4 \pi \kappa_\text{P}
+    \rho B - c \kappa_\text{E} \rho E,$$</span> where κ</em><sub>P</sub></span> and κ</em><sub>E</sub></span> are the Planck mean
+    and energy mean absorption opacities, respectively, B is the Planck function, and E is the radiation energy density.
+    The first and second terms on the right hand side are the diffusion of
+    the radiation flux and the work done on the radiation field. The third
+    and fourth terms are the interaction between the radiation and gas
+    fields. The evolution of the gas energy is as follows <span
+    class="math display">$$\rho \frac{D}{Dt} \left( \frac{e}{\rho}\right) =
+    - P \div{\mathbf{v}} - 4 \pi \kappa_\text{P} \rho B + c \kappa_\text{E} \rho
+    E.$$</span> The SPH implementation of these equations and the method
+    used to solve them can be found in the work of <span class="citation"
+    data-cites="whitehouse_2005MNRAS.364.1367W"></span>. In addition to
+    this, the work presented makes use of the thermal evolution model of
+    <span class="citation"
+    data-cites="bate_keto_10.1093/mnras/stv451"></span> to allow for more
+    accurate treatment of thermal behaviour of molecular clouds at low
+    densities and metallicities. This is done by combining a model of the
+    thermodynamics of a diffuse ISM with radiative transfer in the
+    flux-limited approximation of <span class="citation"
+    data-cites="whitehouse_2005MNRAS.364.1367W"></span>.</p>
+    <p>The method i have discuss is applied is perform four star-formation
+    calculations which are then analysed in Chapter <a href="#ch:chapter2"
+    data-reference-type="ref" data-reference="ch:chapter2">[ch:chapter2]</a>
+    in order to extract the properties of protostellar discs. Additional
+    details of the SPH method are discussed in that chapter, these details
+    are not essential to the SPH method but are required for the physics
+    that is simulated. In Chapter <a href="#ch:chapter4"
+    data-reference-type="ref" data-reference="ch:chapter4">[ch:chapter4]</a>
+    i detail the dynamics of small dust grains in SPH.</p>
+    
+
+{% endblock %}

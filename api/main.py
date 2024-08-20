@@ -42,6 +42,18 @@ async def homepage(request: Request):
 async def homepage(request: Request):
     return settings.TEMPLATES.TemplateResponse("publications.html", {"request": request})
 
+@app.get("/resources", response_class=HTMLResponse)
+async def homepage(request: Request):
+    return settings.TEMPLATES.TemplateResponse("resources.html", {"request": request})
+
+@app.get("/resources/smoothed-particle-hydrodynamics", response_class=HTMLResponse)
+async def homepage(request: Request):
+    return settings.TEMPLATES.TemplateResponse("resources/smoothed-particle-hydrodynamics.html", {"request": request})
+
+@app.get("/resources/numerical-methods", response_class=HTMLResponse)
+async def homepage(request: Request):
+    return settings.TEMPLATES.TemplateResponse("resources/numerical-methods.html", {"request": request})
+
 class SampleInput(BaseModel):
     x: int
 

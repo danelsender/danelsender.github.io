@@ -19,3 +19,9 @@ function sample() {
             console.log(error);
         });
 }
+
+
+function openTab(name) {
+    name_str = name.toString();
+    window.open(name_str, "_blank");
+    }
