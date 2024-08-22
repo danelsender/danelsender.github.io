@@ -12,25 +12,11 @@
         <script src="logic.jss"></script>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
         <script>
-            $(document).ready(mobileCheck(){
-                if (onload="mobileCheck()" == true) {
-                    .menuToggle {
-                        display: block;
-                    }
-                    /* hide all the nav-buttons */
-                    .topnav {
-                        display: none;
-                    }
-                } else {
-                    .menuToggle {
-                        display: none;
-                    }
-                    /* show all the nav-buttons */
-                    .topnav {
-                        display: block;
-                    }
-                }
-            })
+            if (onload="mobileCheck()" == true) {
+                $('.topnav').hide();
+            } else {
+                $('.menuToggle').hide();
+            }
         </script>
     </head>
     <body>
