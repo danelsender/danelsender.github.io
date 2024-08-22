@@ -10,17 +10,30 @@
                 and ids are used for very specific things, they can get complicated -->
         <link rel="stylesheet" href="style.css"/>
         <script src="logic.jss"></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+        <script>
+            $(document).ready(mobileCheck(){
+                if (onload="mobileCheck()" == true) {
+                    .menuToggle {
+                        display: block;
+                    }
+                    /* hide all the nav-buttons */
+                    .topnav {
+                        display: none;
+                    }
+                } else {
+                    .menuToggle {
+                        display: none;
+                    }
+                    /* show all the nav-buttons */
+                    .topnav {
+                        display: block;
+                    }
+                }
+            })
+        </script>
     </head>
     <body>
-        <div class="topnav">
-            <a href="index.html">home</a>
-            <a href="publications.html">publications</a>
-            <a href="code.html">code</a>
-            <a href="cv.html">cv</a>
-            <a href="gallery.html">photography</a>
-            <a href="resources.html">resources</a>
-            <!-- Photography tab? That would be cool -->
-        </div>
         <nav role="navigation">
             <div class="menuToggle">
                 <input type="checkbox" />
@@ -36,6 +49,15 @@
                     <a href="/resources"><li>resources</li></a>
                 </ul>
             </div>
+            <div class="topnav">
+                <a href="index.html">home</a>
+                <a href="publications.html">publications</a>
+                <a href="code.html">code</a>
+                <a href="cv.html">cv</a>
+                <a href="gallery.html">photography</a>
+                <a href="resources.html">resources</a>
+                <!-- Photography tab? That would be cool -->
+            </div>            
         </nav>
         <div>
             <!-- Keep the colour backgroud? -->
