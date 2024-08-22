@@ -252,7 +252,7 @@ body{
   transform: none;
 }
 
-@media only screen and (min-width: 851px) {
+@media only screen and (min-width: 401pt) {
   /* hide the hamburger */
   .menuToggle {
     display: none;
@@ -264,7 +264,7 @@ body{
 }
 /* if browser window is small (max-width) */
 
-@media only screen and (max-width: 850px) {
+@media only screen and (max-width: 400pt) {
   /* show everything with the hamburger class */
   .menuToggle {
     display: block;
